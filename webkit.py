@@ -155,11 +155,11 @@ def schemes():
 
 
 class Prefs:
-    """显示设置的默认值（「设为默认」写入；文件不在即用页面内置的出厂值）。
+    """显示设置的默认值（「设为默认」写入；文件不在即用页面内置的出厂值）。factory 同 Handler.factory。
     文件格式 {"display": {"scheme", "font", "weight", "ink"}}；旧文件没有 scheme 一项照样读（页面按旧的深浅补上）。
     写入前白名单校验：配色与字体只能是 schemes.json 里列出的，粗细与灰字亮度限定范围，不把任意字符串写进页面样式。"""
-    def __init__(self, path):
-        self.path = path
+    def __init__(self, path, factory=None):
+        self.path = path; self.factory = factory
     def load(self):
         try:
             with open(self.path, encoding="utf-8") as f:
@@ -175,7 +175,7 @@ class Prefs:
         S = schemes()
         try:
             font, weight, ink = d["font"], int(d["weight"]), int(d["ink"])
-            scheme = d.get("scheme", S["factory"]["scheme"])
+            scheme = d.get("scheme", factory_of(self.factory)["scheme"])
         except (KeyError, TypeError, ValueError, AttributeError):
             raise ApiError("设置格式不对")
         lo, hi = S["weight"]
@@ -192,28 +192,33 @@ class Prefs:
 
 
 # ---------------- /kit/* ----------------
-def _scheme_blocks():
+def factory_of(override=None):
+    """出厂值：schemes.json 的 factory，再叠上工具自己定的几项（Handler.factory，如 {"scheme": "xiangya"}）。"""
+    return {**schemes()["factory"], **(override or {})}
+
+def _scheme_blocks(factory=None):
     """四个 [data-scheme] 变量块；出厂那套同时挂在 :root 上（页面脚本没跑时也有取值）。"""
-    S = schemes(); out = []
+    S = schemes(); out = []; fs = factory_of(factory)["scheme"]
     for s in S["schemes"]:
         sel = f':root[data-scheme="{s["id"]}"]'
-        if s["id"] == S["factory"]["scheme"]: sel = ":root, " + sel
+        if s["id"] == fs: sel = ":root, " + sel
         body = "; ".join(f"--{k}:{s['tokens'][k]}" for k in S["vars"])
         out.append(f"{sel} {{   /* {s['name']}：{s['desc']}（{s['source']}） */\n  {body};\n  color-scheme: {s['theme']};\n}}")
     return "\n".join(out)
 
-def kit_asset(path):
-    """/kit/kit.js 与 /kit/kit.css：每次从盘上读，schemes.json 注入进去。其它路径返回 None。"""
+def kit_asset(path, factory=None):
+    """/kit/kit.js 与 /kit/kit.css：每次从盘上读，schemes.json 注入进去。其它路径返回 None。
+    factory 是工具自己定的出厂值（叠在 schemes.json 的 factory 上），见 Handler.factory。"""
     if path == "/kit/kit.js":
         S = schemes()
-        data = {"factory": S["factory"], "fonts": S["fonts"], "weight": S["weight"],
+        data = {"factory": factory_of(factory), "fonts": S["fonts"], "weight": S["weight"],
                 "schemes": [{k: s[k] for k in ("id", "name", "theme", "pair", "desc", "swatch", "ink")} for s in S["schemes"]]}
         with open(os.path.join(KIT_DIR, "kit.js"), encoding="utf-8") as f:
             text = f.read().replace("/*@@KIT_DATA@@*/null", json.dumps(data, ensure_ascii=False))
         return text.encode("utf-8"), "text/javascript; charset=utf-8"
     if path == "/kit/kit.css":
         with open(os.path.join(KIT_DIR, "kit.css"), encoding="utf-8") as f:
-            text = f.read().replace("/*@@SCHEME_BLOCKS@@*/", _scheme_blocks())
+            text = f.read().replace("/*@@SCHEME_BLOCKS@@*/", _scheme_blocks(factory))
         return text.encode("utf-8"), "text/css; charset=utf-8"
     return None
 
@@ -228,8 +233,10 @@ class Handler(BaseHTTPRequestHandler):
        web_dir    页面文件目录；static 为 {URL: 文件名}，默认 / → index.html、/app.js、/app.css
        get_routes / post_routes  {路径: 函数}；函数的调用方式由 call() 定（默认 fn(arg)）
        prefs      Prefs 实例（有它才提供 /api/prefs）；idle  IdleWatch 实例（有它才计空闲）
-       port       监听的端口（Host / Origin 校验用），启动时设"""
+       port       监听的端口（Host / Origin 校验用），启动时设
+       factory    本工具的出厂值，叠在 schemes.json 的 factory 上，只写要改的几项，如 {"scheme": "xiangya"}；默认不改"""
     signature = "web-kit"; header = "X-Kit"; web_dir = ""; port = 0
+    factory = {}
     static = {"/": "index.html", "/app.js": "app.js", "/app.css": "app.css"}
     get_routes = {}; post_routes = {}
     prefs = None; idle = None
@@ -271,7 +278,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if not self._host_ok(): return self._send(403, {"error": "bad host"})
         u = urllib.parse.urlsplit(self.path)
-        kit = kit_asset(u.path)
+        kit = kit_asset(u.path, self.factory)
         if kit: return self._send(200, kit[0], kit[1])
         if u.path in self.static:
             fn = self.static[u.path]

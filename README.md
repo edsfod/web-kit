@@ -16,8 +16,8 @@
 服务端（Python）：
 1. `sys.dont_write_bytecode = True` 之后 `sys.path.insert(0, os.path.join(HERE, "web-kit"))`、`import webkit`（不在副本目录生成 `__pycache__`）。
 2. `ApiError = webkit.ApiError`；业务接口照旧写成函数，放进 `GET` / `POST` 两张表。
-3. `class Handler(webkit.Handler)`，设 `signature`、`header`（写操作的自定义请求头名）、`web_dir`、`get_routes`、`post_routes`；接口函数要额外参数时覆盖 `call(self, fn, arg)`（clash-review 传 `ctx`）。
-4. `main()` 里：`webkit.setup_log(var 目录)`；`--stop` 用 `webkit.stop(port, Handler.header)`；`webkit.already_running(port, signature)`；设 `Handler.port`、`Handler.prefs = webkit.Prefs(<var>/ui_prefs.json)`、`Handler.idle = webkit.IdleWatch(分钟, busy=…)`；`srv = webkit.bind(port, Handler)`，失败时 `webkit.fail(话, 对话框标题)`；`Handler.idle.start(srv)`；`srv.serve_forever()`。
+3. `class Handler(webkit.Handler)`，设 `signature`、`header`（写操作的自定义请求头名）、`web_dir`、`get_routes`、`post_routes`；接口函数要额外参数时覆盖 `call(self, fn, arg)`（clash-review 传 `ctx`）。本工具的出厂值与 `schemes.json` 不同时设 `factory`，只写要改的几项（如 `{"scheme": "xiangya"}`），面板的「还原出厂」、没有存过设置时的配色都按它。
+4. `main()` 里：`webkit.setup_log(var 目录)`；`--stop` 用 `webkit.stop(port, Handler.header)`；`webkit.already_running(port, signature)`；设 `Handler.port`、`Handler.prefs = webkit.Prefs(<var>/ui_prefs.json, Handler.factory)`、`Handler.idle = webkit.IdleWatch(分钟, busy=…)`；`srv = webkit.bind(port, Handler)`，失败时 `webkit.fail(话, 对话框标题)`；`Handler.idle.start(srv)`；`srv.serve_forever()`。
 5. 起子进程时照旧自己带 `creationflags=CREATE_NO_WINDOW`（本模块自己不起子进程）。
 6. 启动用的 `.bat` 用 `for /f … ('powershell -NoProfile -ExecutionPolicy Bypass -File "%HERE%web-kit\find-python.ps1"')` 取 `pythonw.exe` 的路径，不写死；PowerShell 脚本里 `& web-kit\find-python.ps1`（`-Console` 取 `python.exe`）。
 
@@ -46,7 +46,7 @@
 | `find-python.ps1` | 找 Python 3.8+ 解释器，打印 `pythonw.exe`（`-Console` 打印 `python.exe`）的路径，找不到退出码 1。顺序：环境变量 `TOOL_PYTHON` → 工具目录里的 `python\`（发布包自带的免安装版 Python）→ 注册表登记的安装（PEP 514，新版本优先；python.org 与 Miniforge 的安装程序都会登记）→ `py` 启动器 → 常见安装目录 → PATH（跳过应用商店的占位程序）。PATH 放最后：Inkscape 这类程序会把自带的 Python 放进 PATH。纯 ASCII |
 | `tooldirs.py` | 设置与运行数据放在哪：`dirs(工具目录, 工具名)` 返回 (设置目录, 数据目录)，平常是 `%APPDATA%\<工具名>\` 与 `%LOCALAPPDATA%\<工具名>\`；工具目录里有 `portable` 文件时是工具目录与它的 `var/`（便携模式）。只算路径，不建目录。不依赖 `webkit.py`，命令行工具也能用 |
 | `pack.py` | 打发布包：工具里 git 跟踪的文件（不含 `.github/`）加 python.org 官方的 Windows 免安装版 Python（版本与 sha256 写在脚本开头，下载后核对），打成 `<工具名>-<标签>-win64.zip`，Python 放 `<工具名>/python/`，并在它的 `._pth` 里加上工具根目录（免安装版默认不把脚本所在目录放进 `sys.path`）。各工具的 GitHub Actions 在打标签时调用它 |
-| `webkit.py` | 服务端外壳：`setup_log`、`fail`、`ExclusiveServer` / `bind`（只绑 127.0.0.1，独占端口，可等旧实例让出端口）、`already_running`、`stop`、`IdleWatch`（`busy()` 为真时不退）、`read_displays`、`Prefs`（`{"display": {scheme, font, weight, ink}}`，白名单来自 `schemes.json`，原子写）、`kit_asset`、`Handler` 基类（Host 头校验；写操作要求自定义请求头并校验 Origin；`/api/ping`、`/api/shutdown`、`/api/display`、`/api/prefs`、`/kit/kit.js`、`/kit/kit.css`、静态页面）。`/api/ping` 回 `{app, pid, header, kit}`：`header` 是写操作要的请求头名，port-monitor 据 `pid` 与它认出并停止带 web-kit 的服务 |
+| `webkit.py` | 服务端外壳：`setup_log`、`fail`、`ExclusiveServer` / `bind`（只绑 127.0.0.1，独占端口，可等旧实例让出端口）、`already_running`、`stop`、`IdleWatch`（`busy()` 为真时不退）、`read_displays`、`Prefs`（`{"display": {scheme, font, weight, ink}}`，白名单来自 `schemes.json`，原子写）、`kit_asset`、`factory_of`（出厂值：`schemes.json` 的 `factory` 叠上工具的 `Handler.factory`）、`Handler` 基类（Host 头校验；写操作要求自定义请求头并校验 Origin；`/api/ping`、`/api/shutdown`、`/api/display`、`/api/prefs`、`/kit/kit.js`、`/kit/kit.css`、静态页面）。`/api/ping` 回 `{app, pid, header, kit}`：`header` 是写操作要的请求头名，port-monitor 据 `pid` 与它认出并停止带 web-kit 的服务 |
 
 四套配色：
 
@@ -111,5 +111,6 @@
 
 ## 修订记录
 
+- 2026-09-25（v1.2.0）：工具可以自定出厂值：`Handler.factory`（只写要改的几项，如出厂配色），`kit.js` 注入的出厂值、`kit.css` 里挂在 `:root` 上的那套配色、`Prefs` 的缺省配色都按它；不设时与以前相同。起因：周时间轴工具的出厂配色要用象牙，而 `schemes.json` 的出厂值是各工具共用的。
 - 2026-09-25（v1.1.0）：`schemes.json` 新增类别色 `cat-a` / `cat-a-soft`（冷，蓝）、`cat-b` / `cat-b-soft`（暖，沙），四套都有，用来区分同一画面里并列的两类对象（首个用户是周时间轴工具的两种时间区间）。只加变量，原有变量的取值未改，旧页面不受影响。
 - 2026-09-24（v1.0.0）：首次公开发布。此前在作者的私有工作区里开发，历史不随公开仓库发布。
